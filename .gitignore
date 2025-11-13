@@ -1,24 +1,27 @@
-# Compiled class file
-*.class
+# Backend (Spring Boot)
+backend/RiotTrackerApplication/target/
+backend/RiotTrackerApplication/.env
 
-# Log file
+# Frontend (Vite/React)
+frontend/league-tracker/node_modules/
+frontend/league-tracker/dist/
+frontend/league-tracker/.env
+frontend/league-tracker/.env.local
+
+# Logs
+logs
 *.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
 
-# BlueJ files
-*.ctxt
-
-# Mobile Tools for Java (J2ME)
-.mtj.tmp/
-
-# Package Files #
-*.jar
-*.war
-*.nar
-*.ear
-*.zip
-*.tar.gz
-*.rar
-
-# virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
-hs_err_pid*
-replay_pid*
+# IDE / OS
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

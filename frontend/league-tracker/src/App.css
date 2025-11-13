@@ -1,0 +1,156 @@
+
+:root {
+  :root {
+  --primary: #0BC6E3;     
+  --secondary: #C89B3C;   
+  --success: #00C853;     
+  --danger: #FF5252;      
+  --background: #0A1428;  
+  --card-bg: #1E2328;    
+  --text: #F0E6D2;        
+}
+
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-main);
+  background-color: var(--background);
+  color: var(--text);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.navbar {
+  width: 100%;
+  display: flex;
+  justify-content: space-between; 
+  align-items: center;             
+  padding: 1rem 2rem;
+  background-color: var(--card-bg);
+  border-bottom: 2px solid var(--secondary);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.logo-container {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.logo-text {
+  display: flex;
+  flex-direction: row; 
+  align-items: baseline;
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: var(--primary);
+  letter-spacing: 1px;
+}
+
+.nav-links {
+  display: flex;
+  gap: 1.5rem;
+}
+
+.nav-links a {
+  color: var(--text);
+  text-decoration: none;
+  font-size: 1rem;
+  transition: color 0.3s ease;
+}
+
+.nav-links a:hover {
+  color: var(--secondary);
+}
+
+
+.header {
+  text-align: center;
+  padding: 4rem 1rem 2rem 1rem;
+  background: linear-gradient(180deg, var(--card-bg) 0%, transparent 100%);
+  width: 100%;
+}
+
+.header h1 {
+  font-size: 2rem;
+  color: var(--secondary);
+  letter-spacing: 1px;
+}
+
+
+.search-form {
+  display: flex;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-top: 2rem;
+  background-color: var(--card-bg);
+  padding: 1rem;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.search-form input {
+  background-color: #12181f;       
+  border: 1px solid var(--secondary); 
+  border-radius: 8px;
+  color: var(--text);              
+  padding: 0.6rem 1rem;
+  font-size: 1rem;
+  width: 160px;
+}
+
+.search-form input::placeholder {
+  color: #888;                     
+}
+
+.search-form input:focus {
+  outline: none;
+  border-color: var(--primary);    
+  box-shadow: 0 0 6px var(--primary);
+}
+
+.search-form button {
+  background-color: var(--primary); 
+  color: var(--background);         
+  border: none;
+  border-radius: 8px;
+  padding: 0.6rem 1rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.search-form button:hover {
+  background-color: var(--secondary); 
+  box-shadow: 0 0 10px var(--secondary);
+}
+
+
+.cat-image {
+  margin-top: 2rem;            
+  max-width: 300px;            
+  border-radius: 12px;         
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6); 
+  border: 2px solid var(--secondary); 
+}
+
+.main-page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  min-height: 100vh;
+  background-color: var(--background);
+  padding-bottom: 4rem;
+}
+
+.main-page section {
+  max-width: 800px;
+  width: 90%;
+}
