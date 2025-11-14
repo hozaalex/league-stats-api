@@ -18,7 +18,6 @@ function App() {
                                         <main className="content">
                                                 <Header />
                                                 <SearchForm />
-                                                <img className="cat-image" src="/cat.jpg" alt="Default cat" />
                                         </main>
                                         }
                         />
