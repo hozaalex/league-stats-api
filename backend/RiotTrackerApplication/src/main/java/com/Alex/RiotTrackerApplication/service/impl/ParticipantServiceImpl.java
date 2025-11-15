@@ -7,7 +7,6 @@ import com.Alex.RiotTrackerApplication.model.dto.SummonerStatsDto;
 import com.Alex.RiotTrackerApplication.repository.ParticipantRepository;
 import com.Alex.RiotTrackerApplication.repository.SummonerRepository;
 import com.Alex.RiotTrackerApplication.service.ParticipantService;
-import jakarta.servlet.http.Part;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;

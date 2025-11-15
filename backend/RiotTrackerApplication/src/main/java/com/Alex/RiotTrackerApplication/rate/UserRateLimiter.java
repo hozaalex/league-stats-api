@@ -13,6 +13,10 @@ public class UserRateLimiter {
     private static final long COOLDOWN_TIME = 10000;
 
     public Mono<Void> checkAllowed(String ip){
+
+        if(ip == null || ip.isEmpty()){
+            return Mono.error(new NullPointerException("Ip is null or empty"));
+        }
         long now = System.currentTimeMillis();
         Long last = lastRequestTimes.get(ip);
 
@@ -23,6 +27,7 @@ public class UserRateLimiter {
                 return Mono.error(new IllegalStateException("Try again in " + remaining + " seconds"));
             }
         }
+
 
 
         lastRequestTimes.put(ip, now);

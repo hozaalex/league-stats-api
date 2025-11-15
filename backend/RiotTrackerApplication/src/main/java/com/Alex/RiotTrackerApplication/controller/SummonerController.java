@@ -9,8 +9,13 @@ import com.Alex.RiotTrackerApplication.service.ParticipantService;
 import com.Alex.RiotTrackerApplication.service.RankedStatsService;
 import com.Alex.RiotTrackerApplication.service.RiotApiService;
 import com.Alex.RiotTrackerApplication.service.SummonerService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.persistence.EntityNotFoundException;
-import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -35,6 +40,7 @@ import java.util.logging.Logger;
 @RestController
 @RequestMapping("api/v1/summoners")
 @CrossOrigin(origins = "http://localhost:5173/")
+@Tag(name = "Stats", description = "Endpoints for fetching League of Legends summoner data")
 public class SummonerController {
 
     private static final Logger log = Logger.getLogger(SummonerController.class.getName());
@@ -61,11 +67,45 @@ public class SummonerController {
 
 
     @PostMapping("/track")
+    @Operation(
+            summary = "Gets all of the available information for a given player",
+            description = "Fetches summoner information from the Riot Games API by game name tag line and region"
+    )
+    @ApiResponses(value = {
+            @ApiResponse(
+                    responseCode = "201",
+                    description = "Summoner Found Succesfully",
+                    content = @Content(
+                            mediaType = "application/json",
+                            schema = @Schema(implementation = FrontEndResponseDto.class)
+                    )
+            ),
+            @ApiResponse(
+                    responseCode = "404",
+                    description = "Summoner not found",
+                    content = @Content
+            ),
+            @ApiResponse(
+                    responseCode = "429",
+                    description = "Rate limit exceeded",
+                    content = @Content
+            ),
+            @ApiResponse(
+                    responseCode = "503",
+                    description = "Internal Server Error, service unavailable",
+                    content = @Content
+
+            )
+
+
+    })
     public Mono<ResponseEntity<FrontEndResponseDto>> trackNewSummoner(
             @RequestBody RiotIdRequestDto requestDto,
-            HttpServletRequest request) {
+            ServerHttpRequest request) {
 
-        String ip = request.getRemoteAddr();
+        //should be changed if I ever use proxies/load balancers
+        String ip = request.getRemoteAddress().getAddress().getHostAddress();
+
         log.info("Tracking summoner: " + requestDto.getGameName() + "#" + requestDto.getTagLine());
 
 
