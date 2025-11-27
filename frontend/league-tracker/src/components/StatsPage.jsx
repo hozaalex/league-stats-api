@@ -4,23 +4,19 @@ import axios from "axios";
 import Navbar from "./Navbar";
 import "./StatsPage.css";
 
-
-//Splash art as bg for each match/champions
-
 function StatsPage() {
   const location = useLocation();
   const { gameName, tag, region } = location.state || {};
 
-  // Data states
+
   const [loading, setLoading] = useState(false);
+  const [status, setStatus] = useState("");
   const [error, setError] = useState(null);
   const [summoner, setSummoner] = useState(null);
   const [overallStats, setOverallStats] = useState(null);
   const [rankedProfile, setRankedProfile] = useState(null);
   const [champions, setChampions] = useState([]);
   const [matches, setMatches] = useState([]);
-  
-  
 
   useEffect(() => {
     if (!gameName || !tag || !region) {
@@ -36,16 +32,18 @@ function StatsPage() {
         console.log("Fetch already in progress, skipping...");
         return;
       }
-      
+
       hasStarted = true;
       console.log("Starting fetch...");
       setLoading(true);
       setError(null);
+      setStatus("Submitting request...");
 
       try {
+
         console.log("Sending request:", { gameName, tagLine: tag, region });
-        
-        const response = await axios.post(
+
+        const trackResponse = await axios.post(
           "http://localhost:8080/api/v1/summoners/track",
           {
             gameName,
@@ -54,54 +52,149 @@ function StatsPage() {
           }
         );
 
-        console.log("Response status:", response.status);
-        console.log("Response data:", response.data);
+        console.log("Track response:", trackResponse.data);
+
+        const responseData = trackResponse.data;
+        if (!isMounted) return;
+
+        if (responseData.status === "COMPLETED" && responseData.data) {
+          console.log("Received cached data immediately!");
+
+          setSummoner(responseData.data.summoner ?? null);
+          setOverallStats(responseData.data.overallStats ?? null);
+          setRankedProfile(responseData.data.rankedProfile ?? null);
+          setChampions(responseData.data.overallChampionStats ?? []);
+          setMatches(responseData.data.recentMatches ?? []);
+
+          setStatus("Completed!");
+          setLoading(false);
+          return; 
+        }
+
+        const { requestId } = trackResponse.data;
+
+        if (!requestId) {
+          throw new Error("No request ID received");
+        }
+
+        setStatus("Processing... Please wait");
+
+
+        const result = await pollStatus(requestId, isMounted);
 
         if (!isMounted) return;
 
-        const data = response.data;
-        
-        console.log("Summoner:", data.summoner);
-        console.log("OverallStats:", data.overallStats);
-        console.log("RankedProfile:", data.rankedProfile);
-        console.log("Champions:", data.overallChampionStats);
-        console.log("Matches:", data.recentMatches);
+        if (result) {
+          console.log("Received data:", result);
 
-        setSummoner(data.summoner ?? null);
-        setOverallStats(data.overallStats ?? null);
-        setRankedProfile(data.rankedProfile ?? null);
-        setChampions(data.overallChampionStats ?? []);
-        setMatches(data.recentMatches ?? []);
+          setSummoner(result.summoner ?? null);
+          setOverallStats(result.overallStats ?? null);
+          setRankedProfile(result.rankedProfile ?? null);
+          setChampions(result.overallChampionStats ?? []);
+          setMatches(result.recentMatches ?? []);
 
-        
-        
-        console.log("State set successfully");
+          setStatus("Completed!");
+          console.log("State set successfully");
+        } else {
+          throw new Error("Failed to fetch summoner data");
+        }
       } catch (err) {
         console.error("Error:", err);
         console.error("Error response:", err?.response);
-        if (isMounted && err?.response?.status !== 503) {
-          setError(err?.response?.data?.message || err?.message || "Failed to fetch data");
+
+        if (isMounted) {
+          if (err?.response?.status === 429) {
+            setError("Rate limit exceeded. Please try again later.");
+          } else if (err?.response?.status === 404) {
+            setError("Summoner not found");
+          } else {
+            setError(
+              err?.response?.data?.message ||
+              err?.response?.data?.error ||
+              err?.message ||
+              "Failed to fetch data"
+            );
+          }
         }
       } finally {
         console.log("Loading complete");
-        if (isMounted) setLoading(false);
+        if (isMounted) {
+          setLoading(false);
+        }
       }
     }
 
+    async function pollStatus(requestId, isMounted) {
+      const maxAttempts = 60;
+      let attempts = 0;
+
+      while (attempts < maxAttempts) {
+        if (!isMounted) {
+          console.log("Component unmounted, stopping poll");
+          return null;
+        }
+
+        try {
+          console.log(`Polling attempt ${attempts + 1}/${maxAttempts}`);
+
+          const statusResponse = await axios.get(
+            `http://localhost:8080/api/v1/summoners/status/${requestId}`
+          );
+
+          const statusData = statusResponse.data;
+          console.log("Status data:", statusData);
+
+          if (statusData.status === "COMPLETED") {
+            console.log("Request completed!");
+            return statusData.data;
+          } else if (statusData.status === "FAILED") {
+            throw new Error(statusData.error || "Request failed");
+          } else if (statusData.status === "PROCESSING") {
+
+            setStatus(`Processing... (${attempts + 1}/${maxAttempts})`);
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+            attempts++;
+          }
+        } catch (err) {
+          if (err?.response?.status === 404) {
+            console.log("Request not found, retrying...");
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+            attempts++;
+          } else {
+            throw err;
+          }
+        }
+      }
+
+      throw new Error("Request timed out after 2 minutes");
+    }
+
     fetchData();
-    
+
     return () => {
       isMounted = false;
     };
   }, [gameName, tag, region]);
 
-  console.log("Current state:", { summoner, overallStats, rankedProfile, champions: champions?.length, matches: matches?.length, loading, error });
+  console.log("Current state:", {
+    summoner,
+    overallStats,
+    rankedProfile,
+    champions: champions?.length,
+    matches: matches?.length,
+    loading,
+    error,
+  });
 
   return (
     <div className="stats-page">
-      
+      {loading && (
+        <div className="loading">
+          <p>Loading summoner data...</p>
+          {status && <p className="status">{status}</p>}
+        </div>
+      )}
 
-      {loading && <div className="loading">Loading summoner data...</div>}
       {error && <div className="error">Error: {error}</div>}
 
       {!loading && !error && !summoner && (
@@ -114,11 +207,13 @@ function StatsPage() {
           <aside className="left-panel">
             <div className="profile-card">
               <img
-              src={`http://ddragon.leagueoflegends.com/cdn/15.22.1/img/profileicon/${summoner.profileIconId}.png`}
-              alt={`${summoner.gameName} profile icon`}
-               className="profile-icon"
+                src={`http://ddragon.leagueoflegends.com/cdn/15.22.1/img/profileicon/${summoner.profileIconId}.png`}
+                alt={`${summoner.gameName} profile icon`}
+                className="profile-icon"
               />
-              <h2>{summoner.gameName}#{summoner.tagLine}</h2>
+              <h2>
+                {summoner.gameName}#{summoner.tagLine}
+              </h2>
               <p>Level {summoner.summonerLevel ?? "-"}</p>
               <p className="muted">Region: {summoner.region}</p>
             </div>
@@ -130,7 +225,10 @@ function StatsPage() {
                 <p>Total Games: {overallStats.totalGames ?? 0}</p>
                 <p>Wins: {overallStats.wins ?? 0}</p>
                 <p>Losses: {overallStats.losses ?? 0}</p>
-                <p>Win Rate: {(Number(overallStats.winRate || 0) * 100).toFixed(1)}%</p>
+                <p>
+                  Win Rate:{" "}
+                  {(Number(overallStats.winRate || 0) * 100).toFixed(1)}%
+                </p>
                 <p>Avg KDA: {Number(overallStats.kda || 0).toFixed(2)}</p>
                 <p>Avg Gold: {Number(overallStats.avgGold || 0).toFixed(0)}</p>
                 <p>Avg CS: {Number(overallStats.avgMinions || 0).toFixed(1)}</p>
@@ -139,51 +237,66 @@ function StatsPage() {
 
             {/* Ranked Profile */}
             {rankedProfile && (
-  <div className="ranked-card">
-    <h3>Ranked Stats</h3>
+              <div className="ranked-card">
+                <h3>Ranked Stats</h3>
 
-    {/* Ranked queues */}
-    {rankedProfile.rankedStatsDto?.map((queue, index) => (
-      <div key={index} className="rank-item">
-        <p><strong>{queue.queueType}</strong></p>
-        <img
-          src={`${queue.tier.toUpperCase()}.png`}
-          
-          alt={queue.tier}
-          className="tier-icon"
-        />
-        <p>{queue.tier} {queue.rank} – {queue.leaguePoints} LP</p>
-        <p>Wins: {queue.wins}</p>
-        <p>Loses: {queue.losses}</p>
-        <p>
-          Win Rate:{' '}
-          {queue.losses + queue.wins > 0
-          ? ((queue.wins / (queue.losses + queue.wins)) * 100).toFixed(2)
-          : '0.00'}
-            %
-      </p>
-      </div>
-    ))}
+                {/* Ranked queues */}
+                {rankedProfile.rankedStatsDto && rankedProfile.rankedStatsDto.length > 0 ? (
+                  rankedProfile.rankedStatsDto.map((queue, index) => (
+                    <div key={index} className="rank-item">
+                      <p>
+                        <strong>{queue.queueType}</strong>
+                      </p>
 
-    {/* Ranked champion performance */}
-    {rankedProfile.championPerformance?.length > 0 ? (
-      rankedProfile.championPerformance.map(champ => (
-        <div key={champ.championId} className="champ-card">
-          <p><strong>{champ.championName}</strong></p>
-          <p className="muted">
-            {champ.totalMatches} games — {champ.winRate} Winrate
-          </p>
-          <p className="muted">
-            Kills: {champ.avgKills} Deaths: {champ.avgDeaths} Assists: {champ.avgAssists}  
-          </p>
-          <p>{(champ.kda).toFixed(2)} KDA</p>
-        </div>
-      ))
-    ) : (
-      <p className="muted">No ranked champion stats</p>
-    )}
-  </div>
-)}
+                      <img
+                        src={`${queue.tier.toUpperCase()}.png`}
+                        alt={queue.tier}
+                        className="tier-icon"
+                      />
+
+                      <p>
+                        {queue.tier} {queue.rank} – {queue.leaguePoints} LP
+                      </p>
+                      <p>Wins: {queue.wins}</p>
+                      <p>Loses: {queue.losses}</p>
+                      <p>
+                        Win Rate:{" "}
+                        {queue.losses + queue.wins > 0
+                          ? ((queue.wins / (queue.losses + queue.wins)) * 100).toFixed(2)
+                          : "0.00"}
+                        %
+                      </p>
+                    </div>
+                  ))
+                ) : (
+                  <div className="rank-item">
+                    <img src="UNRANKED.png" className="tier-icon" alt="Unranked" />
+                    <p>Unranked</p>
+                  </div>
+                )}
+
+                {/* Ranked champion performance */}
+                {rankedProfile.championPerformance?.length > 0 ? (
+                  rankedProfile.championPerformance.map((champ) => (
+                    <div key={champ.championId} className="champ-card">
+                      <p>
+                        <strong>{champ.championName}</strong>
+                      </p>
+                      <p className="muted">
+                        {champ.totalMatches} games — {champ.winRate} Winrate
+                      </p>
+                      <p className="muted">
+                        Kills: {champ.avgKills} Deaths: {champ.avgDeaths}{" "}
+                        Assists: {champ.avgAssists}
+                      </p>
+                      <p>{champ.kda.toFixed(2)} KDA</p>
+                    </div>
+                  ))
+                ) : (
+                  <p className="muted">No ranked champion stats</p>
+                )}
+              </div>
+            )}
           </aside>
 
           {/* CENTER PANEL */}
@@ -202,18 +315,25 @@ function StatsPage() {
                     <strong>{match.championName ?? "Unknown"}</strong> —{" "}
                     {match.kills ?? 0}/{match.deaths ?? 0}/{match.assists ?? 0}
                   </p>
-                  <p>KDA: {Number(match.kda || ((match.kills + match.assists) / (match.deaths || 1))).toFixed(2)}</p>
+                  <p>
+                    KDA:{" "}
+                    {Number(
+                      match.kda ||
+                      (match.kills + match.assists) / (match.deaths || 1)
+                    ).toFixed(2)}
+                  </p>
                   <p className="muted">{match.queueType ?? "Normal"}</p>
                   <p className="muted">
-                    Date: {match.gameCreation
+                    Date:{" "}
+                    {match.gameCreation
                       ? new Date(match.gameCreation).toLocaleString()
                       : "-"}
                   </p>
                   <p className="muted">
-                    Duration: {match.gameDuration
-                      ? `${Math.floor(match.gameDuration / 60)}m ${
-                          match.gameDuration % 60
-                        }s`
+                    Duration:{" "}
+                    {match.gameDuration
+                      ? `${Math.floor(match.gameDuration / 60)}m ${match.gameDuration % 60
+                      }s`
                       : "-"}
                   </p>
                 </div>
@@ -224,30 +344,32 @@ function StatsPage() {
           {/* RIGHT PANEL */}
           <aside className="right-panel">
             <h3>Top Champions</h3>
-  {champions.length > 0 ? (
-    champions.slice(0, 5).map((champ, index) => (
-      <div
-        key={champ.championId ?? champ.championName ?? index}
-        className="champ-card"
-      >
-        <p>
-          <strong>{champ.championName ?? "Unknown"}</strong>
-        </p>
-        <p className="muted">
-          {champ.totalMatches ?? 0} games — {champ.winRate ?? "0%"} Winrate
-        </p>
-        <p className="muted">
-          Kills: {Number(champ.avgKills || 0).toFixed(1)}
-          {'\u00A0'}Deaths: {Number(champ.avgDeaths || 0).toFixed(1)}
-          {'\u00A0'}Assists: {Number(champ.avgAssists || 0).toFixed(1)}  
-        </p>
-        <p>KDA: {Number(champ.kda || 0).toFixed(2)} </p>
-      </div>
-    ))
-  ) : (
-    <p className="muted">No champion data</p>
-  )}
-</aside>
+            {champions.length > 0 ? (
+              champions.slice(0, 5).map((champ, index) => (
+                <div
+                  key={champ.championId ?? champ.championName ?? index}
+                  className="champ-card"
+                >
+                  <p>
+                    <strong>{champ.championName ?? "Unknown"}</strong>
+                  </p>
+                  <p className="muted">
+                    {champ.totalMatches ?? 0} games — {champ.winRate ?? "0%"}{" "}
+                    Winrate
+                  </p>
+                  <p className="muted">
+                    Kills: {Number(champ.avgKills || 0).toFixed(1)}
+                    {"\u00A0"}Deaths: {Number(champ.avgDeaths || 0).toFixed(1)}
+                    {"\u00A0"}Assists:{" "}
+                    {Number(champ.avgAssists || 0).toFixed(1)}
+                  </p>
+                  <p>KDA: {Number(champ.kda || 0).toFixed(2)} </p>
+                </div>
+              ))
+            ) : (
+              <p className="muted">No champion data</p>
+            )}
+          </aside>
         </div>
       )}
     </div>

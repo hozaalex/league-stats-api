@@ -25,7 +25,7 @@ public class SummonerDto {
     @Schema(description = "ID of profile icon", example = "23")
     private Integer profileIconId;
 
-    @Schema(description = "Last profile update timestamp", example = "1712345678000")
+    @Schema(description = "Last profile update timestamp from riot", example = "1712345678000")
     private Long revisionDate;
 
     @Schema(description = "Summoner level", example = "527")
@@ -33,4 +33,5 @@ public class SummonerDto {
 
     @Schema(description = "Region of the summoner", example = "EUW1")
     private String region;
+
 }

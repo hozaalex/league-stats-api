@@ -1,13 +1,10 @@
 package com.Alex.RiotTrackerApplication;
 
-
 import com.Alex.RiotTrackerApplication.rate.UserRateLimiter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
-
-import static org.assertj.core.api.Fail.fail;
 
 class UserRateLimiterTest {
 
@@ -20,87 +17,115 @@ class UserRateLimiterTest {
 
     @Test
     void shouldAllowFirstRequest() {
-
         Mono<Void> result = userRateLimiter.checkAllowed("192.168.1.1");
         StepVerifier.create(result)
                 .verifyComplete();
     }
 
     @Test
-    void shouldBlockSecondRequestWithinCooldown() {
-        userRateLimiter.checkAllowed("192.168.1.1").block();
-        Mono<Void> result = userRateLimiter.checkAllowed("192.168.1.1");
+    void shouldAllow20RequestsWithinMinute() {
+        String ip = "192.168.1.1";
+
+        for (int i = 0; i < 20; i++) {
+            StepVerifier.create(userRateLimiter.checkAllowed(ip))
+                    .verifyComplete();
+        }
+    }
+
+    @Test
+    void shouldBlock21stRequestWithinMinute() {
+        String ip = "192.168.1.1";
+
+        for (int i = 0; i < 20; i++) {
+            userRateLimiter.checkAllowed(ip).block();
+        }
+
+        Mono<Void> result = userRateLimiter.checkAllowed(ip);
         StepVerifier.create(result)
                 .expectErrorMatches(throwable ->
                         throwable instanceof IllegalStateException &&
-                                throwable.getMessage().contains("Try again in") &&
-                                throwable.getMessage().contains("seconds")
+                                throwable.getMessage().contains("Rate limit exceeded")
                 )
                 .verify();
     }
 
     @Test
     void shouldAllowDifferentIPs() {
+        for (int i = 0; i < 20; i++) {
+            userRateLimiter.checkAllowed("192.168.1.1").block();
+        }
 
-        userRateLimiter.checkAllowed("192.168.1.1").block();
         Mono<Void> result = userRateLimiter.checkAllowed("192.168.1.2");
         StepVerifier.create(result)
                 .verifyComplete();
     }
 
     @Test
-    void shouldAllowSameIPAfterCooldown() throws InterruptedException {
+    void shouldResetAfterOneMinute() throws InterruptedException {
+        String ip = "192.168.1.1";
 
-        userRateLimiter.checkAllowed("192.168.1.1").block();
-        Thread.sleep(10100);
-        Mono<Void> result = userRateLimiter.checkAllowed("192.168.1.1");
+        for (int i = 0; i < 20; i++) {
+            userRateLimiter.checkAllowed(ip).block();
+        }
+
+        Thread.sleep(61000);
+
+        Mono<Void> result = userRateLimiter.checkAllowed(ip);
         StepVerifier.create(result)
                 .verifyComplete();
     }
 
     @Test
-    void shouldShowCorrectRemainingTime() {
-
-        String ip = "192.168.1.1";
-        userRateLimiter.checkAllowed(ip).block();
-        try {
-            Thread.sleep(2000);
-        } catch (InterruptedException e) {
-            fail("Sleep interrupted");
-        }
-
-        Mono<Void> result = userRateLimiter.checkAllowed(ip);
+    void shouldHandleNullIP() {
+        Mono<Void> result = userRateLimiter.checkAllowed(null);
         StepVerifier.create(result)
                 .expectErrorMatches(throwable ->
-                        throwable.getMessage().contains("7") ||
-                                throwable.getMessage().contains("8")
+                        throwable instanceof IllegalArgumentException
                 )
                 .verify();
     }
 
     @Test
-    void shouldHandleNullIP() {
-
-        Mono<Void> result = userRateLimiter.checkAllowed(null);
+    void shouldHandleEmptyIP() {
+        Mono<Void> result = userRateLimiter.checkAllowed("");
         StepVerifier.create(result)
-                .expectError()
+                .expectErrorMatches(throwable ->
+                        throwable instanceof IllegalArgumentException
+                )
                 .verify();
     }
 
     @Test
-    void shouldHandleMultipleIPsConcurrently() throws InterruptedException {
-
+    void shouldHandleMultipleIPsIndependently() {
         String[] ips = {"192.168.1.1", "192.168.1.2", "192.168.1.3"};
+
         for (String ip : ips) {
-            StepVerifier.create(userRateLimiter.checkAllowed(ip))
-                    .verifyComplete();
+            for (int i = 0; i < 20; i++) {
+                StepVerifier.create(userRateLimiter.checkAllowed(ip))
+                        .verifyComplete();
+            }
         }
 
-        StepVerifier.create(userRateLimiter.checkAllowed(ips[0]))
-                .expectError(IllegalStateException.class)
-                .verify();
+        for (String ip : ips) {
+            StepVerifier.create(userRateLimiter.checkAllowed(ip))
+                    .expectError(IllegalStateException.class)
+                    .verify();
+        }
+    }
 
-        StepVerifier.create(userRateLimiter.checkAllowed(ips[1]))
+    @Test
+    void shouldIncrementCountWithinSameWindow() {
+        String ip = "192.168.1.1";
+
+        for (int i = 0; i < 10; i++) {
+            userRateLimiter.checkAllowed(ip).block();
+        }
+
+        for (int i = 0; i < 10; i++) {
+            userRateLimiter.checkAllowed(ip).block();
+        }
+
+        StepVerifier.create(userRateLimiter.checkAllowed(ip))
                 .expectError(IllegalStateException.class)
                 .verify();
     }

@@ -1,39 +1,31 @@
 package com.Alex.RiotTrackerApplication.controller;
 
-import com.Alex.RiotTrackerApplication.mappers.Mapper;
-import com.Alex.RiotTrackerApplication.model.RankedStatsEntity;
-import com.Alex.RiotTrackerApplication.model.SummonerEntity;
+
+import com.Alex.RiotTrackerApplication.mappers.impl.SummonerMapper;
+
 import com.Alex.RiotTrackerApplication.model.dto.*;
 import com.Alex.RiotTrackerApplication.rate.UserRateLimiter;
-import com.Alex.RiotTrackerApplication.service.ParticipantService;
-import com.Alex.RiotTrackerApplication.service.RankedStatsService;
-import com.Alex.RiotTrackerApplication.service.RiotApiService;
-import com.Alex.RiotTrackerApplication.service.SummonerService;
+import com.Alex.RiotTrackerApplication.service.*;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.persistence.EntityNotFoundException;
-import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.http.server.ServerHttpRequest;
 import org.springframework.web.bind.annotation.*;
-import reactor.core.publisher.Flux;
+import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
-import java.time.Duration;
+
 import java.util.List;
+import java.util.Map;
 import java.util.logging.Logger;
-
-
-//TODO:Add builds for the Champions
 
 
 
@@ -45,26 +37,36 @@ public class SummonerController {
 
     private static final Logger log = Logger.getLogger(SummonerController.class.getName());
 
-    private final SummonerService summonerService;
-    private final Mapper<SummonerEntity, SummonerDto> summonerMapper;
-    private final ParticipantService participantService;
-    private final RiotApiService riotApiService;
-    private final RankedStatsService rankedStatsService;
+
     private final UserRateLimiter userRateLimiter;
+    private final KafkaProducerService kafkaProducerService;
+    private final SummonerService summonerService;
+    private final RankedStatsService rankedStatsService;
+    private final ParticipantService participantService;
+    private final SummonerMapper summonerMapper;
 
-    public SummonerController(SummonerService summonerService,
-                              Mapper<SummonerEntity, SummonerDto> summonerMapper,
-                              ParticipantService participantService,
-                              RiotApiService riotApiService,RankedStatsService rankedStatsService,UserRateLimiter userRateLimiter) {
-        this.summonerService = summonerService;
-        this.summonerMapper = summonerMapper;
-        this.participantService = participantService;
-        this.riotApiService = riotApiService;
-        this.rankedStatsService = rankedStatsService;
+
+    private final RequestStatusService requestStatusService;
+
+    public SummonerController(
+            UserRateLimiter userRateLimiter,
+            KafkaProducerService kafkaProducerService,
+            RequestStatusService requestStatusService
+            ,SummonerService summonerService
+            ,RankedStatsService rankedStatsService
+            ,ParticipantService participantService
+            ,SummonerMapper summonerMapper
+
+    ) {
+
         this.userRateLimiter = userRateLimiter;
+        this.kafkaProducerService = kafkaProducerService;
+        this.requestStatusService = requestStatusService;
+        this.summonerService = summonerService;
+        this.rankedStatsService = rankedStatsService;
+        this.participantService = participantService;
+        this.summonerMapper = summonerMapper;
     }
-
-
 
     @PostMapping("/track")
     @Operation(
@@ -73,17 +75,12 @@ public class SummonerController {
     )
     @ApiResponses(value = {
             @ApiResponse(
-                    responseCode = "201",
-                    description = "Summoner Found Succesfully",
+                    responseCode = "202",
+                    description = "Request accepted and queued for processing",
                     content = @Content(
                             mediaType = "application/json",
-                            schema = @Schema(implementation = FrontEndResponseDto.class)
+                            schema = @Schema(implementation = Map.class)
                     )
-            ),
-            @ApiResponse(
-                    responseCode = "404",
-                    description = "Summoner not found",
-                    content = @Content
             ),
             @ApiResponse(
                     responseCode = "429",
@@ -92,78 +89,156 @@ public class SummonerController {
             ),
             @ApiResponse(
                     responseCode = "503",
-                    description = "Internal Server Error, service unavailable",
+                    description = "Service unavailable",
                     content = @Content
-
             )
-
-
     })
-    public Mono<ResponseEntity<FrontEndResponseDto>> trackNewSummoner(
+    public Mono<ResponseEntity<FrontendResponseWrapperDto>> trackNewSummoner(
             @RequestBody RiotIdRequestDto requestDto,
-            ServerHttpRequest request) {
+            ServerWebExchange exchange) {
 
-        //should be changed if I ever use proxies/load balancers
-        String ip = request.getRemoteAddress().getAddress().getHostAddress();
+        String ip = exchange.getRequest().getRemoteAddress().getAddress().getHostAddress();
 
-        log.info("Tracking summoner: " + requestDto.getGameName() + "#" + requestDto.getTagLine());
-
+        log.info(String.format(
+                "Received track request for summoner: %s#%s from IP: %s",
+                requestDto.getGameName(),
+                requestDto.getTagLine(),
+                ip
+        ));
 
         return userRateLimiter.checkAllowed(ip)
-                .then(
-                        riotApiService.fetchAndMapSummonerEntity(
+                .then(Mono.fromCallable(() ->
+                        summonerService.findByGameNameAndTagLineAndRegion(
                                 requestDto.getGameName(),
                                 requestDto.getTagLine(),
-                                requestDto.getRegion())
-                )
-                .flatMap(summonerDto -> {
-                    SummonerEntity entity = summonerMapper.mapFrom(summonerDto);
+                                requestDto.getRegion()
+                        )
+                ).subscribeOn(Schedulers.boundedElastic()))
+                .flatMap(summonerOpt -> {
 
-                    return Mono.fromCallable(() -> summonerService.saveOrUpdateSummoner(entity))
-                            .subscribeOn(Schedulers.boundedElastic())
-                            .flatMap(savedEntity -> {
-                                log.info("Saved summoner with PUUID: " + savedEntity.getPuuid());
-                                String puuid = savedEntity.getPuuid();
+                    if (summonerOpt.isPresent() && summonerService.isDataFresh(summonerOpt.get())) {
+                        log.info(String.format(
+                                "Returning cached data for: %s#%s",
+                                requestDto.getGameName(),
+                                requestDto.getTagLine()
+                        ));
 
-                                riotApiService.triggerInitialMatchFetch(puuid, requestDto.getRegion());
-                                Mono<List<RankedStatsDto>> rankedFetch =
-                                        riotApiService.fetchRankedStats(puuid, requestDto.getRegion());
+                        return Mono.fromCallable(() -> {
+                                    String puuid = summonerOpt.get().getPuuid();
 
-                                return Mono.when(rankedFetch)
-                                        .then(Mono.fromCallable(() -> {
-                                            SummonerDto summoner = summonerMapper.mapTo(savedEntity);
-                                            SummonerStatsDto overallStats = participantService.getPlayerStatsSummary(puuid);
-                                            RankProfileDto rankedProfile = rankedStatsService.getRankProfile(puuid);
-                                            List<ChampionStatsDto> championStats = participantService.findChampionStatsByPlayer(puuid);
-                                            List<MatchHistoryDto> recentMatches = participantService.getMatchHistory(puuid, PageRequest.of(0, 10))
-                                                    .getContent();
+                                    SummonerDto summonerDto = summonerMapper.mapTo(summonerOpt.get());
+                                    SummonerStatsDto overallStats = participantService.getPlayerStatsSummary(puuid);
+                                    RankProfileDto rankedProfile = rankedStatsService.getRankProfile(puuid);
+                                    List<ChampionStatsDto> championStats = participantService.findChampionStatsByPlayer(puuid);
 
-                                            FrontEndResponseDto response = FrontEndResponseDto.builder()
-                                                    .summoner(summoner)
-                                                    .overallStats(overallStats)
-                                                    .rankedProfile(rankedProfile)
-                                                    .overallChampionStats(championStats)
-                                                    .recentMatches(recentMatches)
-                                                    .build();
+                                    Pageable pageable = PageRequest.of(0, 10);
+                                    Page<MatchHistoryDto> matchPage = participantService.getMatchHistory(puuid, pageable);
+                                    List<MatchHistoryDto> recentMatches = matchPage.getContent();
 
-                                            log.info("Response built: " + response);
-                                            return response;
-                                        }).subscribeOn(Schedulers.boundedElastic()));
+                                    FrontEndResponseDto responseData = FrontEndResponseDto.builder()
+                                            .summoner(summonerDto)
+                                            .overallStats(overallStats)
+                                            .rankedProfile(rankedProfile)
+                                            .overallChampionStats(championStats)
+                                            .recentMatches(recentMatches)
+                                            .build();
+
+                                    return FrontendResponseWrapperDto.builder()
+                                            .requestId(null)
+                                            .status("COMPLETED")
+                                            .data(responseData)
+                                            .error(null)
+                                            .build();
+                                }).subscribeOn(Schedulers.boundedElastic())
+                                .map(ResponseEntity::ok);
+                    }
+
+
+                    log.info(String.format(
+                            "Data stale or missing for %s#%s, queuing to Kafka",
+                            requestDto.getGameName(),
+                            requestDto.getTagLine()
+                    ));
+
+                    return Mono.fromCallable(() ->
+                                    kafkaProducerService.sendSummonerRequest(
+                                            requestDto.getGameName(),
+                                            requestDto.getTagLine(),
+                                            requestDto.getRegion(),
+                                            ip
+                                    )
+                            )
+                            .flatMap(requestId -> {
+                                FrontendResponseWrapperDto initialStatus = FrontendResponseWrapperDto.builder()
+                                        .requestId(requestId)
+                                        .status("PROCESSING")
+                                        .data(null)
+                                        .error(null)
+                                        .build();
+
+                                return requestStatusService.saveStatus(requestId, initialStatus)
+                                        .thenReturn(initialStatus);
+                            })
+                            .map(wrapper -> {
+                                log.info("Queued summoner request [" + wrapper.getRequestId() + "]");
+                                return ResponseEntity.status(HttpStatus.ACCEPTED).body(wrapper);
                             });
                 })
-                .map(dto -> ResponseEntity.status(HttpStatus.CREATED).body(dto))
-                .defaultIfEmpty(ResponseEntity.status(HttpStatus.NOT_FOUND).build())
                 .onErrorResume(IllegalStateException.class, e -> {
-
                     log.warning("Rate limit exceeded for IP: " + ip);
-                    return Mono.just(ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).build());
+
+                    FrontendResponseWrapperDto errorResponse = FrontendResponseWrapperDto.builder()
+                            .requestId(null)
+                            .status("RATE_LIMIT_EXCEEDED")
+                            .data(null)
+                            .error("Too many requests. Please try again later.")
+                            .build();
+
+                    return Mono.just(ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(errorResponse));
                 })
                 .onErrorResume(e -> {
-                    log.severe("Error tracking summoner: " + e.getMessage());
-                    e.printStackTrace();
-                    return Mono.just(ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build());
+                    log.severe("Error processing summoner request: " + e.getMessage());
+
+                    FrontendResponseWrapperDto errorResponse = FrontendResponseWrapperDto.builder()
+                            .requestId(null)
+                            .status("SERVICE_UNAVAILABLE")
+                            .data(null)
+                            .error("Unable to process request at this time.")
+                            .build();
+
+                    return Mono.just(ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(errorResponse));
                 });
     }
+
+    @GetMapping("/status/{requestId}")
+    @Operation(
+            summary = "Check the status of a summoner request",
+            description = "Returns the current processing status and data if available"
+    )
+    @ApiResponses(value = {
+            @ApiResponse(
+                    responseCode = "200",
+                    description = "Status retrieved successfully",
+                    content = @Content(
+                            mediaType = "application/json",
+                            schema = @Schema(implementation = FrontendResponseWrapperDto.class)
+                    )
+            ),
+            @ApiResponse(
+                    responseCode = "404",
+                    description = "Request ID not found",
+                    content = @Content
+            )
+    })
+    public Mono<ResponseEntity<FrontendResponseWrapperDto>> getSummonerStatus(@PathVariable String requestId) {
+        log.info("Checking status for request: " + requestId);
+
+        return requestStatusService.getStatus(requestId)
+                .map(ResponseEntity::ok)
+                .switchIfEmpty(Mono.just(ResponseEntity.status(HttpStatus.NOT_FOUND).build()));
+    }
+}
+
 
 
 
@@ -289,4 +364,3 @@ public class SummonerController {
 //                });
 //    }
 
-}

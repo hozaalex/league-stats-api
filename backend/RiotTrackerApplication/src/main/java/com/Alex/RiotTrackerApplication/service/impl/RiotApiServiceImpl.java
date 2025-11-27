@@ -2,7 +2,6 @@ package com.Alex.RiotTrackerApplication.service.impl;
 
 import com.Alex.RiotTrackerApplication.mappers.impl.MatchMapper;
 import com.Alex.RiotTrackerApplication.mappers.impl.RankedStatsMapper;
-import com.Alex.RiotTrackerApplication.mappers.impl.SummonerMapper;
 import com.Alex.RiotTrackerApplication.model.MatchEntity;
 import com.Alex.RiotTrackerApplication.model.RankedStatsEntity;
 import com.Alex.RiotTrackerApplication.model.SummonerEntity;
@@ -17,16 +16,12 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
-import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.reactive.function.client.WebClient;
-import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 
-import java.time.Instant;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -149,6 +144,8 @@ public class RiotApiServiceImpl implements RiotApiService {
                             .profileIconId(((Number) summonerData.get("profileIconId")).intValue())
                             .revisionDate(((Number) summonerData.get("revisionDate")).longValue())
                             .summonerLevel(((Number) summonerData.get("summonerLevel")).intValue())
+                            .lastUpdated(System.currentTimeMillis())
+
                             .build();
 
                     return Mono.fromCallable(() -> {
@@ -165,6 +162,7 @@ public class RiotApiServiceImpl implements RiotApiService {
                                 existing.setProfileIconId(entity.getProfileIconId());
                                 existing.setRevisionDate(entity.getRevisionDate());
                                 existing.setSummonerLevel(entity.getSummonerLevel());
+                                existing.setSummonerLevel(System.currentTimeMillis());
 
 
                                 summonerRepository.save(existing);
@@ -174,6 +172,7 @@ public class RiotApiServiceImpl implements RiotApiService {
                             return false;
                         }
                         else {
+                            entity.setLastUpdated(System.currentTimeMillis());
                             summonerRepository.save(entity);
                             return true;
                         }
@@ -199,13 +198,13 @@ public class RiotApiServiceImpl implements RiotApiService {
     @Override
     public Mono<SummonerDto> fetchAndMapSummonerEntity(String gameName, String tagLine, String region) {
 
-        //check first if the summoner exists
-
+        //check if summoner exists before
         String regionalRouting = getRegionalRouting(region);
         String platformRouting = getPlatformRouting(region);
 
         String accountUrl = String.format("https://%s.api.riotgames.com/riot/account/v1/accounts/by-riot-id/%s/%s",
                regionalRouting , gameName, tagLine);
+
 
         return rateLimiter.acquirePermission()
                 .then(webClient.get()
@@ -239,6 +238,8 @@ public class RiotApiServiceImpl implements RiotApiService {
                                                         .profileIconId(((Number) summonerData.get("profileIconId")).intValue())
                                                         .revisionDate(((Number) summonerData.get("revisionDate")).longValue())
                                                         .summonerLevel(((Number) summonerData.get("summonerLevel")).intValue())
+
+
                                                         .build();
                                             })
                                     );
@@ -414,29 +415,26 @@ public class RiotApiServiceImpl implements RiotApiService {
 
 
     @Override
-    public void triggerInitialMatchFetch(String puuid,String region) {
+    public Mono<Void> triggerInitialMatchFetch(String puuid, String region) {
         log.info("Starting background match fetch for PUUID: " + puuid);
 
-        fetchMatchIds(puuid,region)
+        return fetchMatchIds(puuid, region)
                 .flatMapMany(matchIds -> {
                     log.info("Found " + matchIds.size() + " matches for PUUID: " + puuid);
                     return Flux.fromIterable(matchIds);
                 })
                 .flatMap(matchId ->
-                        fetchAndSaveMatchDetails(matchId,region)
-                                .doOnNext(v -> log.info("Successfully saved match: " + matchId))
-                                .onErrorResume( e -> {
-                                    log.warning("Failed to save match " + matchId + ": " + e);
-                                    return Mono.empty();
-                                }),
+                                fetchAndSaveMatchDetails(matchId, region)
+                                        .doOnNext(v -> log.info("Successfully saved match: " + matchId))
+                                        .onErrorResume(e -> {
+                                            log.warning("Failed to save match " + matchId + ": " + e);
+                                            return Mono.empty();
+                                        }),
                         1
                 )
-                .doOnComplete(() -> log.info("Completed match fetch for PUUID: " + puuid))
-                .subscribe(
-                        null,
-                        error -> log.severe("Critical error in match fetch pipeline for " + puuid + ": " + error),
-                        () -> log.info("Match fetch subscription completed for PUUID: " + puuid)
-                );
+                .then()
+                .doOnSuccess(v -> log.info("Completed match fetch for PUUID: " + puuid))
+                .doOnError(error -> log.severe("Critical error in match fetch pipeline for " + puuid + ": " + error));
     }
 
 
