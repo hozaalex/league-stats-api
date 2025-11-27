@@ -18,7 +18,7 @@ A full-stack web application that tracks and visualizes **League of Legends** pl
 - **Tools:** Docker, Maven, Git
 
 ## Setup
-1. Clone the repository: `git clone <repo-url>`
+1. Clone the repository: `git clone https://github.com/hozaalex/league-stats-api`
 2. Configure Riot API key in `application.properties`
 3. Setup database properties in `application.properties`
 4. Run backend: `mvn spring-boot:run`
