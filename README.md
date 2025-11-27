@@ -66,7 +66,7 @@ Frontend Polls Status → Returns Complete Data
 2. Configure Riot API key in `application.properties`
 3. Setup database properties in `application.properties`
 4. Start required services with Docker (PostgreSQL, Redis, Kafka, Zookeeper, Kafka UI): `docker-compose up`
-5. Run backend: `./mvnw verify`
+5. Run the backend (either from your IDE or using Maven).
 6. Run frontend: `npm install && npm run dev`
 
 
