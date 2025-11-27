@@ -1,4 +1,4 @@
-# League of Legends Performance Analytics Platform
+# League of Legends Stats Tracker
 
 A production-grade full-stack application providing **League of Legends** player analytics with a cache-first reactive architecture, asynchronous processing, and intelligent rate limiting. This platform delivers fast, reliable insights into player profiles, ranked statistics, champion performance, and match history.
 
