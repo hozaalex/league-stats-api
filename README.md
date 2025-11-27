@@ -21,7 +21,7 @@ A full-stack web application that tracks and visualizes **League of Legends** pl
 1. Clone the repository: `git clone https://github.com/hozaalex/league-stats-api`
 2. Configure Riot API key in `application.properties`
 3. Setup database properties in `application.properties`
-4. Run backend: `./mvnw run`
+4. Run backend: `./mvnw verify`
 5. Run frontend: `npm install && npm run dev`
 6. Navigate to `http://localhost:5173/`
 
