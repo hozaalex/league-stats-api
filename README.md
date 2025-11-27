@@ -22,7 +22,7 @@ A full-stack web application that tracks and visualizes **League of Legends** pl
 2. Configure Riot API key in `application.properties`
 3. Setup database properties in `application.properties`
 4. Run backend: `mvn spring-boot:run`
-5. Run frontend: `npm install && npm start`
+5. Run frontend: `npm install && npm run dev`
 6. Navigate to `http://localhost:5173/`
 
 ## Contribution
