@@ -48,7 +48,7 @@ Docker, Docker Compose, Maven, Git
 
 ## Architecture Flow
 
-```text
+```
 User Request → Controller → Cache Check (PostgreSQL)
     ↓ (if stale/missing)
 Kafka Producer → Message Queue → Kafka Consumer
