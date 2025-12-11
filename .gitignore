@@ -1,12 +1,15 @@
 # Backend (Spring Boot)
 backend/RiotTrackerApplication/target/
 backend/RiotTrackerApplication/.env
+backend/RiotTrackerApplication/application-prod.properties
+backend/RiotTrackerApplication/application-local.properties
 
 # Frontend (Vite/React)
 frontend/league-tracker/node_modules/
 frontend/league-tracker/dist/
 frontend/league-tracker/.env
 frontend/league-tracker/.env.local
+frontend/league-tracker/.env.production
 
 # Logs
 logs
@@ -14,10 +17,27 @@ logs
 npm-debug.log*
 yarn-debug.log*
 pnpm-debug.log*
+lerna-debug.log*
+
+# Docker
+.dockerignore
+docker-compose.override.yml
+*.env.docker
+.docker/
+
+# Secrets & Keys
+*.key
+*.pem
+*.p12
+*.jks
+secrets/
 
 # IDE / OS
 .vscode/*
 !.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
 .idea
 .DS_Store
 *.suo
@@ -25,3 +45,28 @@ pnpm-debug.log*
 *.njsproj
 *.sln
 *.sw?
+*.swp
+*.swo
+*~
+
+# Testing
+coverage/
+*.lcov
+.nyc_output
+
+# Maven/Gradle
+.mvn/wrapper/maven-wrapper.jar
+.gradle/
+build/
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+# Spring Boot
+spring-boot-devtools.properties
+HELP.md
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.bak

@@ -24,4 +24,8 @@ public interface SummonerService {
     Optional<SummonerEntity> findById(String puuid);
 
     Map<String, String> getAllPuuidsAndRegions();
+
+    Boolean isDataFresh(SummonerEntity summoner);
+
+    Optional<SummonerEntity> findByGameNameAndTagLineAndRegion(String gameName, String tagLine, String region);
 }

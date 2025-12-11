@@ -19,7 +19,7 @@ public interface RiotApiService {
     Mono<SummonerDto> fetchAndMapSummonerEntity(String gameName, String tagLine, String region);
     Mono<List<String>> fetchMatchIds(String puuid,String region);
     Mono<?> fetchAndSaveMatchDetails(String matchId,String region);
-    void triggerInitialMatchFetch(String puuid,String region);
+    Mono<Void> triggerInitialMatchFetch(String puuid,String region);
     Mono<Boolean> fetchAndSaveSummoner(String puuid,String region);
     Mono<List<RankedStatsDto>> fetchRankedStats(String puuid,String region);
 

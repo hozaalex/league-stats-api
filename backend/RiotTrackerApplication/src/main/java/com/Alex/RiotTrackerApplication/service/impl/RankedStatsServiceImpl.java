@@ -1,8 +1,6 @@
 package com.Alex.RiotTrackerApplication.service.impl;
 
-import com.Alex.RiotTrackerApplication.controller.SummonerController;
 import com.Alex.RiotTrackerApplication.mappers.Mapper;
-import com.Alex.RiotTrackerApplication.mappers.impl.RankedStatsMapper;
 import com.Alex.RiotTrackerApplication.model.RankedStatsEntity;
 import com.Alex.RiotTrackerApplication.model.dto.ChampionStatsDto;
 import com.Alex.RiotTrackerApplication.model.dto.RankProfileDto;

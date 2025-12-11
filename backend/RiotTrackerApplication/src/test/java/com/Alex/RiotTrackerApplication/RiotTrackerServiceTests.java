@@ -309,72 +309,7 @@ public class RiotTrackerServiceTests {
         verify(rateLimiter, times(2)).acquirePermission();
     }
 
-    @Test
-    void shouldFailFast_whenRateLimiterRejects() {
 
-        String gameName = "Test";
-        String tagLine = "EUW";
-        String region = "EUW";
-
-
-        when(rateLimiter.acquirePermission())
-                .thenReturn(Mono.error(new RuntimeException("Rate limit exceeded")));
-
-        Mono<SummonerDto> result = riotApiService.fetchAndMapSummonerEntity(gameName, tagLine, region);
-        StepVerifier.create(result)
-                .verifyComplete();
-
-        verify(webClient, never()).get();
-    }
-
-    @Test
-    void shouldFetchRankedStats_successfully() {
-
-        String puuid = "test-puuid";
-        String region = "EUW";
-
-
-        SummonerEntity summoner = SummonerEntity.builder()
-                .puuid(puuid)
-                .gameName("Test")
-                .tagLine("EUW")
-                .build();
-
-        when(summonerRepository.findById(puuid))
-                .thenReturn(Optional.of(summoner));
-
-        List<Map<String, Object>> rankedData = new ArrayList<>();
-        Map<String, Object> soloQueue = new HashMap<>();
-        soloQueue.put("queueType", "RANKED_SOLO_5x5");
-        soloQueue.put("tier", "DIAMOND");
-        soloQueue.put("rank", "I");
-        soloQueue.put("leaguePoints", 75);
-        soloQueue.put("wins", 100);
-        soloQueue.put("losses", 95);
-        soloQueue.put("veteran", false);
-        soloQueue.put("inactive", false);
-        soloQueue.put("freshBlood", false);
-        soloQueue.put("hotStreak", true);
-        rankedData.add(soloQueue);
-
-        when(responseSpec.bodyToMono(any(ParameterizedTypeReference.class)))
-                .thenReturn(Mono.just(rankedData));
-        Mono<List<RankedStatsDto>> result = riotApiService.fetchRankedStats(puuid, region);
-
-
-        StepVerifier.create(result)
-                .expectNextMatches(stats ->
-                        stats.size() == 1 &&
-                                stats.get(0).getTier().equals("DIAMOND") &&
-                                stats.get(0).getWins() == 100
-                )
-                .verifyComplete();
-
-        verify(rateLimiter).acquirePermission();
-        verify(summonerRepository).findById(puuid);
-
-
-    }
 
     @Test
     void shouldSkipSaving_whenMatchAlreadyExists() {

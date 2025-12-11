@@ -16,4 +16,5 @@ public interface SummonerRepository extends JpaRepository<SummonerEntity,String>
 
     @Query("SELECT s.puuid AS puuid, s.region AS region FROM SummonerEntity s")
     List<Object[]> findAllPuuidsAndRegions();
+    Optional<SummonerEntity> findByGameNameAndTagLineAndRegion(String gameName, String tagLine, String region);
 }

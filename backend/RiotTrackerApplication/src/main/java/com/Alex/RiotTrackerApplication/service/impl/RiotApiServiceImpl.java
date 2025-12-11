@@ -2,7 +2,6 @@ package com.Alex.RiotTrackerApplication.service.impl;
 
 import com.Alex.RiotTrackerApplication.mappers.impl.MatchMapper;
 import com.Alex.RiotTrackerApplication.mappers.impl.RankedStatsMapper;
-import com.Alex.RiotTrackerApplication.mappers.impl.SummonerMapper;
 import com.Alex.RiotTrackerApplication.model.MatchEntity;
 import com.Alex.RiotTrackerApplication.model.RankedStatsEntity;
 import com.Alex.RiotTrackerApplication.model.SummonerEntity;
@@ -17,16 +16,13 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
-import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.reactive.function.client.WebClient;
-import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 
-import java.time.Instant;
-import java.util.ArrayList;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -149,6 +145,8 @@ public class RiotApiServiceImpl implements RiotApiService {
                             .profileIconId(((Number) summonerData.get("profileIconId")).intValue())
                             .revisionDate(((Number) summonerData.get("revisionDate")).longValue())
                             .summonerLevel(((Number) summonerData.get("summonerLevel")).intValue())
+                            .lastUpdated(System.currentTimeMillis())
+
                             .build();
 
                     return Mono.fromCallable(() -> {
@@ -165,6 +163,7 @@ public class RiotApiServiceImpl implements RiotApiService {
                                 existing.setProfileIconId(entity.getProfileIconId());
                                 existing.setRevisionDate(entity.getRevisionDate());
                                 existing.setSummonerLevel(entity.getSummonerLevel());
+                                existing.setSummonerLevel(System.currentTimeMillis());
 
 
                                 summonerRepository.save(existing);
@@ -174,6 +173,7 @@ public class RiotApiServiceImpl implements RiotApiService {
                             return false;
                         }
                         else {
+                            entity.setLastUpdated(System.currentTimeMillis());
                             summonerRepository.save(entity);
                             return true;
                         }
@@ -199,13 +199,13 @@ public class RiotApiServiceImpl implements RiotApiService {
     @Override
     public Mono<SummonerDto> fetchAndMapSummonerEntity(String gameName, String tagLine, String region) {
 
-        //check first if the summoner exists
-
+        //check if summoner exists before
         String regionalRouting = getRegionalRouting(region);
         String platformRouting = getPlatformRouting(region);
 
         String accountUrl = String.format("https://%s.api.riotgames.com/riot/account/v1/accounts/by-riot-id/%s/%s",
                regionalRouting , gameName, tagLine);
+
 
         return rateLimiter.acquirePermission()
                 .then(webClient.get()
@@ -239,6 +239,8 @@ public class RiotApiServiceImpl implements RiotApiService {
                                                         .profileIconId(((Number) summonerData.get("profileIconId")).intValue())
                                                         .revisionDate(((Number) summonerData.get("revisionDate")).longValue())
                                                         .summonerLevel(((Number) summonerData.get("summonerLevel")).intValue())
+
+
                                                         .build();
                                             })
                                     );
@@ -312,7 +314,7 @@ public class RiotApiServiceImpl implements RiotApiService {
     public Mono<List<String>> fetchMatchIds(String puuid,String region) {
         String regionalRouting = getRegionalRouting(region);
 
-        String matchesUrl = String.format("https://%s.api.riotgames.com/lol/match/v5/matches/by-puuid/%s/ids?start=0&count=40",
+        String matchesUrl = String.format("https://%s.api.riotgames.com/lol/match/v5/matches/by-puuid/%s/ids?start=0&count=15",
                 regionalRouting, puuid);
 
         return rateLimiter.acquirePermission()
@@ -331,112 +333,124 @@ public class RiotApiServiceImpl implements RiotApiService {
 
     @Override
     public Mono<Void> fetchAndSaveMatchDetails(String matchId, String region) {
-
         String regionalRouting = getRegionalRouting(region);
+
 
         return Mono.fromCallable(() -> matchRepository.existsById(matchId))
                 .subscribeOn(Schedulers.boundedElastic())
                 .flatMap(exists -> {
                     if (exists) {
-                        log.info("Match already exists: " + matchId);
+                        log.fine("Match already exists, skipping: " + matchId);
                         return Mono.empty();
                     }
 
 
-                    String url = String.format("https://%s.api.riotgames.com/lol/match/v5/matches/%s", regionalRouting, matchId);
+                    String url = String.format("https://%s.api.riotgames.com/lol/match/v5/matches/%s",
+                            regionalRouting, matchId);
 
                     return rateLimiter.acquirePermission()
                             .then(webClient.get()
                                     .uri(url)
                                     .header("X-Riot-Token", apiKey)
                                     .retrieve()
-                                    .bodyToMono(Map.class)
-                                    .flatMap(raw -> {
-                                        Map<String, Object> info = (Map<String, Object>) raw.get("info");
-                                        if (info == null) {
-                                            log.warning("No info found in match data for " + matchId);
-                                            return Mono.empty();
-                                        }
+                                    .bodyToMono(new ParameterizedTypeReference<Map<String, Object>>() {})
+                                    .flatMap(raw -> saveMatchData(raw, matchId)));
+                });
+    }
 
+    private Mono<Void> saveMatchData(Map<String, Object> raw, String matchId) {
+        Map<String, Object> info = (Map<String, Object>) raw.get("info");
+        if (info == null) {
+            log.warning("No info found in match data for " + matchId);
+            return Mono.empty();
+        }
 
-                                        MatchDto matchDto = MatchDto.builder()
-                                                .matchId(matchId)
-                                                .gameMode((String) info.get("gameMode"))
-                                                .gameDuration(((Number) info.get("gameDuration")).longValue())
-                                                .gameCreation(((Number) info.get("gameCreation")).longValue())
-                                                .queueId(((Number) info.get("queueId")).intValue())
-                                                .build();
+        MatchDto matchDto = MatchDto.builder()
+                .matchId(matchId)
+                .gameMode((String) info.get("gameMode"))
+                .gameDuration(((Number) info.get("gameDuration")).longValue())
+                .gameCreation(((Number) info.get("gameCreation")).longValue())
+                .queueId(((Number) info.get("queueId")).intValue())
+                .build();
 
+        List<Map<String, Object>> rawParticipants = (List<Map<String, Object>>) info.get("participants");
+        if (rawParticipants == null || rawParticipants.isEmpty()) {
+            log.warning("No participants found for match " + matchId);
+            return Mono.empty();
+        }
 
-                                        List<Map<String, Object>> rawParticipants = (List<Map<String, Object>>) info.get("participants");
-                                        if (rawParticipants == null || rawParticipants.isEmpty()) {
-                                            log.warning("No participants found for match " + matchId);
-                                            return Mono.empty();
-                                        }
+        List<ParticipantDto> participants = rawParticipants.stream()
+                .map(p -> ParticipantDto.builder()
+                        .name((String) p.get("name"))
+                        .puuid((String) p.get("puuid"))
+                        .championId(((Number) p.get("championId")).intValue())
+                        .win((Boolean) p.get("win"))
+                        .kills(((Number) p.get("kills")).intValue())
+                        .deaths(((Number) p.get("deaths")).intValue())
+                        .assists(((Number) p.get("assists")).intValue())
+                        .totalMinionsKilled(((Number) p.get("totalMinionsKilled")).intValue())
+                        .goldEarned(((Number) p.get("goldEarned")).intValue())
+                        .build())
+                .collect(Collectors.toList());
 
-                                        List<ParticipantDto> participants = rawParticipants.stream()
-                                                .map(p -> ParticipantDto.builder()
-                                                        .name((String) p.get("name"))
-                                                        .puuid((String) p.get("puuid"))
-                                                        .championId(((Number) p.get("championId")).intValue())
-                                                        .win((Boolean) p.get("win"))
-                                                        .kills(((Number) p.get("kills")).intValue())
-                                                        .deaths(((Number) p.get("deaths")).intValue())
-                                                        .assists(((Number) p.get("assists")).intValue())
-                                                        .totalMinionsKilled(((Number) p.get("totalMinionsKilled")).intValue())
-                                                        .goldEarned(((Number) p.get("goldEarned")).intValue())
-                                                        .build())
-                                                .collect(Collectors.toList());
+        matchDto.setParticipants(participants);
 
-                                        matchDto.setParticipants(participants);
+        MatchEntity matchEntity = matchMapper.mapFrom(matchDto);
+        if (matchEntity.getParticipants() != null) {
+            matchEntity.getParticipants().forEach(p -> p.setMatch(matchEntity));
+        }
 
+        return Mono.fromCallable(() -> {
 
-                                        MatchEntity matchEntity = matchMapper.mapFrom(matchDto);
-                                        if (matchEntity.getParticipants() != null) {
-                                            matchEntity.getParticipants().forEach(p -> p.setMatch(matchEntity));
-                                        }
+                    if (matchRepository.existsById(matchId)) {
+                        log.fine("Match exists after fetch, skipping save: " + matchId);
+                        return null;
+                    }
+                    log.info("Saving match to database: " + matchEntity.getMatchId());
+                    return matchRepository.save(matchEntity);
+                })
+                .subscribeOn(Schedulers.boundedElastic())
+                .doOnSuccess(saved -> {
+                    if (saved != null) {
+                        log.info("Successfully saved match: " + saved.getMatchId());
+                    }
+                })
+                .then()
+                .onErrorResume(DataIntegrityViolationException.class, e -> {
 
-
-                                        return Mono.fromCallable(() -> {
-                                                    log.info(">>> SAVING match to database: " + matchEntity.getMatchId());
-                                                    return matchRepository.saveAndFlush(matchEntity);
-                                                })
-                                                .subscribeOn(Schedulers.boundedElastic())
-                                                .doOnSuccess(saved -> log.info(">>> SAVED successfully! Match ID: " + saved.getMatchId()))
-                                                .onErrorResume(DataIntegrityViolationException.class, e -> {
-                                                    log.warning("Duplicate match or participant for " + matchEntity.getMatchId());
-                                                    return Mono.empty();
-                                                })
-                                                .then();
-                                    }));
+                    log.fine("Duplicate constraint violation (race condition): " + matchId);
+                    return Mono.empty();
+                })
+                .onErrorResume(Exception.class, e -> {
+                    log.severe("Unexpected error saving match " + matchId + ": " + e.getMessage());
+                    e.printStackTrace();
+                    return Mono.empty();
                 });
     }
 
 
     @Override
-    public void triggerInitialMatchFetch(String puuid,String region) {
+    public Mono<Void> triggerInitialMatchFetch(String puuid, String region) {
         log.info("Starting background match fetch for PUUID: " + puuid);
 
-        fetchMatchIds(puuid,region)
+        return fetchMatchIds(puuid, region)
                 .flatMapMany(matchIds -> {
                     log.info("Found " + matchIds.size() + " matches for PUUID: " + puuid);
                     return Flux.fromIterable(matchIds);
                 })
                 .flatMap(matchId ->
-                        fetchAndSaveMatchDetails(matchId,region)
-                                .doOnNext(v -> log.info("Successfully saved match: " + matchId))
-                                .onErrorResume( e -> {
-                                    log.warning("Failed to save match " + matchId + ": " + e);
-                                    return Mono.empty();
-                                }),
+                                fetchAndSaveMatchDetails(matchId, region)
+                                        .doOnNext(v -> log.info("Successfully saved match: " + matchId))
+                                        .onErrorResume(e -> {
+                                            log.warning("Failed to save match " + matchId + ": " + e);
+                                            return Mono.empty();
+                                        }),
                         1
                 )
-                .doOnComplete(() -> log.info("Completed match fetch for PUUID: " + puuid))
-                .subscribe(
-                        null,
-                        error -> log.severe("Critical error in match fetch pipeline for " + puuid + ": " + error),
-                        () -> log.info("Match fetch subscription completed for PUUID: " + puuid)
-                );
+                .delayElements(Duration.ofMillis(50))
+                .then()
+                .doOnSuccess(v -> log.info("Completed match fetch for PUUID: " + puuid))
+                .doOnError(error -> log.severe("Critical error in match fetch pipeline for " + puuid + ": " + error));
     }
 
 

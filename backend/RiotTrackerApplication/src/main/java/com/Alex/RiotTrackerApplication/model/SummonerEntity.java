@@ -33,4 +33,6 @@ public class SummonerEntity {
     private long summonerLevel;
 
     private String region;
+
+    private long lastUpdated;
 }

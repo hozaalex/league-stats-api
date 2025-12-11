@@ -1,36 +1,31 @@
 package com.Alex.RiotTrackerApplication.rate;
 
+import io.github.bucket4j.Bandwidth;
+import io.github.bucket4j.Bucket;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
 
+import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Component
 public class UserRateLimiter {
 
-    private final Map<String, Long> lastRequestTimes = new ConcurrentHashMap<String, Long>();
-    private static final long COOLDOWN_TIME = 10000;
+    private final Map<String, Bucket> buckets = new ConcurrentHashMap<>();
 
-    public Mono<Void> checkAllowed(String ip){
+    public Mono<Void> checkAllowed(String ip) {
+        Bucket bucket = buckets.computeIfAbsent(ip, k ->
+                Bucket.builder()
+                        .addLimit(Bandwidth.simple(20, Duration.ofMinutes(1)))
+                        .build()
+        );
 
-        if(ip == null || ip.isEmpty()){
-            return Mono.error(new NullPointerException("Ip is null or empty"));
+        if (bucket.tryConsume(1)) {
+            return Mono.empty();
+        } else {
+            return Mono.error(new IllegalStateException("Rate limit exceeded"));
         }
-        long now = System.currentTimeMillis();
-        Long last = lastRequestTimes.get(ip);
-
-        if (last != null) {
-            long elapsed = now - last;
-            if (elapsed < COOLDOWN_TIME) {
-                long remaining = (COOLDOWN_TIME - elapsed) / 1000;
-                return Mono.error(new IllegalStateException("Try again in " + remaining + " seconds"));
-            }
-        }
-
-
-
-        lastRequestTimes.put(ip, now);
-        return Mono.empty();
     }
 }
+

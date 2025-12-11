@@ -45,7 +45,23 @@ public class SummonerServiceImpl implements SummonerService {
 
     @Override
     public SummonerEntity saveOrUpdateSummoner(SummonerEntity summoner) {
-        return summonerRepository.save(summoner);
+        Optional<SummonerEntity> existingOpt = summonerRepository.findById(summoner.getPuuid());
+
+        if (existingOpt.isPresent()) {
+            SummonerEntity existing = existingOpt.get();
+            existing.setGameName(summoner.getGameName());
+            existing.setTagLine(summoner.getTagLine());
+            existing.setProfileIconId(summoner.getProfileIconId());
+            existing.setRevisionDate(summoner.getRevisionDate());
+            existing.setSummonerLevel(summoner.getSummonerLevel());
+            existing.setRegion(summoner.getRegion());
+            existing.setLastUpdated(System.currentTimeMillis());
+
+            return summonerRepository.save(existing);
+        } else {
+            summoner.setLastUpdated(System.currentTimeMillis());
+            return summonerRepository.save(summoner);
+        }
     }
 
     @Override
@@ -61,5 +77,16 @@ public class SummonerServiceImpl implements SummonerService {
                         arr -> (String) arr[1]
                 ));
         return puuidRegionMap;
+    }
+
+    @Override
+    public Boolean isDataFresh(SummonerEntity summoner) {
+        long tenMinutesAgo = System.currentTimeMillis() - (10 * 60 * 1000);
+        return summoner.getLastUpdated() >= tenMinutesAgo;
+    }
+
+    @Override
+    public Optional<SummonerEntity> findByGameNameAndTagLineAndRegion(String gameName, String tagLine, String region) {
+        return summonerRepository.findByGameNameAndTagLineAndRegion(gameName, tagLine, region);
     }
 }
