@@ -7,6 +7,8 @@ A full-stack web application that tracks and visualizes **League of Legends** pl
 - Displays ranked stats, division emblems, and win rates.
 - Shows champion performance with KDA, matches played, and win rate.
 - Lists recent matches with game duration, KDA, and queue type.
+- On-demand data fetching with 10-minute cache TTL.
+- Asynchronous request processing with status polling for real-time updates and rate-limited API calls.
 - Frontend: React.js | Backend: Java Spring Boot
 - Database: PostgreSQL for persistent match and player data.
 
